@@ -1,0 +1,92 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Siow Meng Low"
+date: "Sunday, April 26, 2015"
+output: html_document
+---
+
+## Executive Summary
+
+In this report we will explore the Human Activity Recognition (HAR) dataset and build a machine learning algorithm to predict the activity quality (the "classe" variable), using the training set.  
+
+Thereafter, we'll be using the algorithm to predict the activity quality in the evaluation set.
+
+## Partitioning Data
+
+First of all, we read in the training and evaluation data from the two CSV files. The training data is further divided into training set and testing set. The testing set is used to estimate the out of sample error rate later on.  
+
+```{r, echo=TRUE, results='hide'}
+library(caret)
+library(randomForest)
+
+trainData <- read.csv("./pml-training.csv", header = TRUE)
+evalData <- read.csv("./pml-testing.csv", header = TRUE)
+
+set.seed(12345)
+
+inTrain <- createDataPartition(y = trainData$classe, p = 0.7, list = FALSE)
+training <- trainData[inTrain, ]
+testing <- trainData[-inTrain, ]
+```
+
+## Feature Selection
+
+From the str output below, we can observe that a lot of the columns have NA values. These columns do not provide good info to differentiate between the 5 activity qualities, we can choose to omit these columns.  
+
+In the following code, I also omitted the column which has near zero variance for their values. These variables won't be a good predictors since they values do not vary much to differentiate between the 5 activity qualities.  
+
+Lastly, I also omitted the first 7 columns since these variables are largely sequential / chronological and won't be good predictors too.
+
+```{r, echo=TRUE}
+str(training)
+
+nsv <- nearZeroVar(training, saveMetrics = TRUE)
+NACol <- apply(training, 2, function(x) sum(is.na(x)) != 0)
+# toKeep is a logical vector that decide which column (i.e. feature) to keep in the new data frame
+# We only keep the columns where the variance is not near zero and has no NA values
+toKeep <- !nsv$nzv & !NACol
+toKeep[1:7] <- FALSE
+
+training <- training[ , toKeep]
+```
+
+## Train Using Random Forest
+
+In the below code, the new training data is used to train a random forest model, with 10-fold cross validation (10-fold is the default value for cross-validation method).  
+
+```{r, echo=TRUE}
+modFit <- train(classe ~ ., method = "rf", data = training, verbose = FALSE, trControl = trainControl(method = "cv"))
+
+modFit
+modFit$finalModel
+
+confusionMatrix(predict(modFit, testing), testing$classe)
+```
+
+From the output above, we can observe that the resampling method is indeed 10-fold cross validation. The final model has a OOB estimate of error rate 0.68%.  
+
+We also use the final model to predict the activity qualities in the testing set. From the confusion matrix, the accuracy is 98.83% (in other words, out of sample error = 1.17%), which is just a little but higher than the OOB estimate above.  
+
+## Predict the Evaluation Set
+
+Lastly, we will use the model to predict the activity qualities in the evaluation dataset. The prediction results are written to files and submitted to Coursera site.  
+
+```{r, echo=TRUE, eval=FALSE}
+answers <- predict(modFit, evalData)
+
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(answers)
+```
+
+## Reference
+
+The HAR dataset reference is from the below:  
+
+- Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu, R.; Fuks, H. Wearable Computing: Accelerometers' Data Classification of Body Postures and Movements. Proceedings of 21st Brazilian Symposium on Artificial Intelligence. Advances in Artificial Intelligence - SBIA 2012. In: Lecture Notes in Computer Science. , pp. 52-61. Curitiba, PR: Springer Berlin / Heidelberg, 2012. ISBN 978-3-642-34458-9. DOI: 10.1007/978-3-642-34459-6_6. 
